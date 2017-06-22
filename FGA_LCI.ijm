@@ -64,7 +64,7 @@ macro "clockDCV"{
 	Dialog.show();
 	imFreq = Dialog.getNumber();
 	nPulses = Dialog.getNumber();
-	stimStart = Dialog.getNumber() * imFreq + 1;
+	stimStart = Dialog.getNumber();
 	getDimensions(width, height, channels, slices, frames);
 	setBatchMode(true)
 	if(slices > frames){
@@ -73,13 +73,13 @@ macro "clockDCV"{
 		nF = frames - 1;
 	}
 	time = nF+1;
-	newImage("Clock", "RGB black", 200, 20, time);
+	scaleF = 2 / imFreq;
+	newImage("Clock", "RGB black", (nF + 20) * scaleF, 20, time);
 	setForegroundColor(255, 255, 255);
-	makeRectangle(2, 2, 182, 16);
+	makeRectangle(2, 2, (nF + 2) * scaleF, 16);
 	run("Draw", "stack");
 	setForegroundColor(0, 255, 255);
-	//stimStart = 30 * imFreq + 1;
-	//stimStart = 61;
+	stimStart = stimStart * scaleF + 1;
 	for(s=0; s<nPulses; s++){
 		makeRectangle(2+stimStart+(3*s), 3, 2, 15);
 		run("Fill", "stack");
@@ -99,6 +99,8 @@ macro "clockDCV"{
 	close();
 	selectWindow("Clock-1");
 	rename("Clock");
+	setForegroundColor(255, 255, 255);
+	run("Label...", "format=00:00 starting=0 interval=" + imFreq + " x=" + width - 27 + " y=17 font=10 text=[] range=1-" + time);
 	setBatchMode("Exit and show");
 	//run("Resize", "sizex=" + width + " sizey=20.0 method=Least-Squares interpolation=Cubic unitpixelx=true unitpixely=true");
 }
@@ -595,36 +597,82 @@ macro "synapsesNumber"{
 	setBatchMode(false);
 }
 
-macro "stabilizeStack"{
-	// Get the main Directory
-	mainDir = getDirectory("Select Movie folder");
-	workDirs = getFileList(mainDir);
-	nDirs = workDirs.length;
-	template = getString("Look for?", "st");
-	//setBatchMode(true);
-	for(d=0; d<nDirs; d++){
-		tempDir = mainDir + workDirs[d];
-		tempFiles = getFileList(tempDir);
-		nFile = tempFiles.length;
-		if(nFile == 0){
-			tempDir = mainDir;
-			tempFiles = getFileList(tempDir);
-			nFile = tempFiles.length;
-		}
+macro "convert nd2 sequence"{
+	// Get the main Directory assuming there is a folder per sequence
+	workDir = getDirectory("Select main diretory");
+	workFold = getFileList(workDir);
+	nFold = workFold.length;
+
+	// ask for a saving string
+	saveTitle = getString("Enter file name (sequence)", "date_cond");
+
+	// considering the name of the folder with information for coverslip
+	setBatchMode(true);
+	for(d=0; d<nFold; d++){
+		showStatus("Converting nd2 sequences");
+		showProgress(d/nFold);
+		workF = workDir + workFold[d];
+		workFiles = getFileList(workF);
+		nFile = workFiles .length;
 		for(f=0; f<nFile; f++){
-			tempFile = tempDir + tempFiles[f];
-			if(indexOf(tempFiles[f], template) > 0){
-				open(tempFile);
-				title = getTitle();
-				run("Image Stabilizer", "transformation=Translation maximum_pyramid_levels=1 template_update_coefficient=0.90 maximum_iterations=200 error_tolerance=0.0000001");
-				run("Z Project...", "projection=[Max Intensity]");
-				selectWindow(title);
-				close();
-				saveAs("Tiff",  tempDir + "\\MAX_" + title);
-				close();
+			tempFile = workF + workFiles[f];
+			if(endsWith(tempFile, "nd2")){
+			
+				// open nd2 sequences with Bio-Format, all images at one
+				run("Bio-Formats Importer", "open=" + tempFile + " autoscale color_mode=Default open_all_series rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+
+				// get information for saving (save in the same folder)
+				savePath = getDirectory("image");
+			
+				// considering the nd2 sequences are usually "Seq####.nd2 - Seq####.nd2 (series n)
+				seq = IJ.pad(f,4); // to have the sequence number
+				n = 1; // series number
+				nImg = nImages; // total number of images
+				while(n <= nImg){
+					nn = n;
+					if(nImg >= 10) nn = IJ.pad(nn,2); // adjust the series number
+					selectWindow(workFold[d] + "Seq"+seq+".nd2 - Seq"+seq+".nd2 (series "+nn+")");
+					rename(saveTitle + seq + "_cs" + (d + 1) + "_" + IJ.pad(n,3));
+					tempTitle = getTitle(); // for calling after aligment
+
+					// register stack
+					getDimensions(width, height, channels, slices, frames);
+					if(channels > 1){
+						run("Split Channels");
+						for(c=1;c<4;c++){
+							selectWindow("C"+c+"-"+tempTitle);
+							run("StackReg", "transformation=Translation");
+						}
+						run("Merge Channels...", "c1=C1-"+tempTitle+" c2=C2-"+tempTitle+" c3=C3-"+tempTitle+" create");
+						run("Z Project...", "projection=[Max Intensity]");
+						rename("MAX_" + tempTitle);
+						selectWindow(tempTitle);
+						nTemp = 2;
+					} else {
+						if(slices > 1){
+							run("StackReg", "transformation=Translation");
+							run("Z Project...", "projection=[Max Intensity]");
+							rename("MAX_" + tempTitle);
+							selectWindow(tempTitle);
+							nTemp = 2;
+						} else {
+							nTemp = 1;
+						}
+					}
+	
+					// save file(s) checking if there is a MAX projection
+					run("Save", "save=" + savePath + tempTitle + ".tif");
+					close();
+					if(nTemp == 2){
+						selectWindow("MAX_" + tempTitle);
+						run("Save", "save=" + savePath + "MAX_" + tempTitle + ".tif");
+						close();
+					}
+					n ++;
+				}
 			}
 		}
 	}
-	setBatchMode(false);
+	showStatus("Converting nd2 sequences: DONE!");
 }
 
