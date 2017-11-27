@@ -280,30 +280,31 @@ while (bCont){
 
 macro "detectParticleLSM"{
 	// Get the main Directory
-path = getDirectory("Select Working directory");
-path_list = getFileList(path);
-nfile     = path_list.length;
-setBatchMode(true);
-// Loop through all the file
-for (f = 0; f < nfile; f++){
-	f_path = path + path_list[f];
-	if (endsWith(f_path, ".tif")) {
-		open(f_path);
-		title = getTitle();
-		selectWindow(title);
-		run("Duplicate...", "duplicate channels=3");
-		selectWindow(title);
-		close();
-		rename(title);
-		run("Detect Particles", "approximate=10 sensitivity=[Bright particles (SNR=5)]");
-		run("To ROI Manager");
-		roiManager("Save", path + "RoiSet_" + title + ".zip");
-		roiManager("Delete");
-		while(nImages > 0){
+	path = getDirectory("Select Working directory");
+	path_list = getFileList(path);
+	nfile     = path_list.length;
+	setBatchMode(true);
+	// Loop through all the file
+	for (f = 0; f < nfile; f++){
+		f_path = path + path_list[f];
+		if (endsWith(f_path, ".tif")) {
+			open(f_path);
+			title = getTitle();
+			selectWindow(title);
+			run("Duplicate...", "duplicate channels=3");
+			selectWindow(title);
 			close();
-		}
-}
-setBatchMode(false);
+			rename(title);
+			run("Detect Particles", "approximate=10 sensitivity=[Bright particles (SNR=5)]");
+			run("To ROI Manager");
+			roiManager("Save", path + "RoiSet_" + title + ".zip");
+			roiManager("Delete");
+			while(nImages > 0){
+				close();
+			}
+	}
+	setBatchMode(false);
+	}
 }
 
 
@@ -375,45 +376,43 @@ macro "dualColorStreamMetamorph"{
 
 macro "navigateROI"{
 	title = getTitle();
-nROI = roiManager("count");
-roiSelect = 0;
-selectRoi(title, roiSelect);
-bCont = true;
-while (bCont){
-	waitForUser("ROI: " + roiSelect + 1 + " / " + nROI + "\n"
-		+ "\"OK\" to move forward;\n"
-		+ "\"Alt + OK\" to navigate backward;\n"
-		+ "\"Shift + OK\" to focus the selection;\n"
-		+ "\"Esc\" to stop.");
-	if (isKeyDown("alt")){
-		if(roiSelect == 0){
-			roiSelect = nROI-1;
+	nROI = roiManager("count");
+	roiSelect = 0;
+	selectRoi(title, roiSelect);
+	bCont = true;
+	while (bCont){
+		waitForUser("ROI: " + roiSelect + 1 + " / " + nROI + "\n"
+			+ "\"OK\" to move forward;\n"
+			+ "\"Alt + OK\" to navigate backward;\n"
+			+ "\"Shift + OK\" to focus the selection;\n"
+			+ "\"Esc\" to stop.");
+		if (isKeyDown("alt")){
+			if(roiSelect == 0){
+				roiSelect = nROI-1;
+			} else {
+				roiSelect -= 1;
+			}
+			selectRoi(title, roiSelect);
+		} else if(isKeyDown("shift")) {
+			selectRoi(title, roiSelect);
 		} else {
-			roiSelect -= 1;
+			if(roiSelect == nROI-1){
+				roiSelect = 0;
+			} else {
+				roiSelect += 1;
+			}
+			selectRoi(title, roiSelect);
 		}
-		selectRoi(title, roiSelect);
-	} else if(isKeyDown("shift")) {
-		selectRoi(title, roiSelect);
-	} else {
-		if(roiSelect == nROI-1){
-			roiSelect = 0;
-		} else {
-			roiSelect += 1;
-		}
-		selectRoi(title, roiSelect);
 	}
-}
-
-function selectRoi(title, roiSelect){
-	selectWindow(title);
-	roiManager("Select", roiSelect);
-	run("To Selection");
-	run("Out [-]");
-	run("Out [-]");
-	run("Out [-]");
-	run("Out [-]");
-}
-
+	function selectRoi(title, roiSelect){
+		selectWindow(title);
+		roiManager("Select", roiSelect);
+		run("To Selection");
+		run("Out [-]");
+		run("Out [-]");
+		run("Out [-]");
+		run("Out [-]");
+	}
 }
 
 
@@ -457,18 +456,19 @@ macro "plotROIsFrame"{
 }
 
 macro "navigateCanvas"{
+	getDimensions(width, height, channels, slices, frames);
 	bCont = true;
 	while(bCont){
 	waitForUser("move to next quadrant?");
 	run("Select None");
 	getDisplayedArea(x,y,w,h);
 	zoom = getZoom()*100;
-	if(x+w<512){
+	if(x+w<width){
 		xC = x+(w*3/2);
 		yC = y+h/2;
 	}
-	if(x+w>=512){
-		if(y+h>=512){
+	if(x+w>=width){
+		if(y+h>=height){
 			xC = w/2;
 			yC = h/2;
 		} else{
@@ -489,6 +489,7 @@ macro "ROIcolocalization"{
 	secondFile = getFileList(secondDir);
 	nSecond = firstFile.length;
 	setForegroundColor(255, 255, 255);
+	setBatchMode(true);
 	for(f=0;f<nFirst;f++){
 		newImage("Untitled", "8-bit black", 512, 512, 1);
 		firstPath = firstDir + firstFile[f];
@@ -609,8 +610,9 @@ macro "convert nd2 sequence"{
 	// considering the name of the folder with information for coverslip
 	setBatchMode(true);
 	for(d=0; d<nFold; d++){
-		showStatus("Converting nd2 sequences");
+		showStatus("Converting nd2 sequences " + d + "/" + nFold);
 		showProgress(d/nFold);
+		//waitBar(d, nFold);
 		workF = workDir + workFold[d];
 		workFiles = getFileList(workF);
 		nFile = workFiles .length;
@@ -650,7 +652,7 @@ macro "convert nd2 sequence"{
 						nTemp = 2;
 					} else {
 						if(slices > 1){
-							run("StackReg", "transformation=Translation");
+							run("StackReg", "transformation=Affine");
 							run("Z Project...", "projection=[Max Intensity]");
 							rename("MAX_" + tempTitle);
 							selectWindow(tempTitle);
@@ -676,3 +678,97 @@ macro "convert nd2 sequence"{
 	showStatus("Converting nd2 sequences: DONE!");
 }
 
+function waitBar(val, max){
+	if(val <= 0){
+		newImage("We are working for you", "8-bit black", 440, 40, 1);
+		makeRectangle(20, 10, 400, 20);
+		setForegroundColor(255, 255, 255);
+		run("Draw", "slice");
+	} else {
+		index = round(400*(val/max));
+		makeRectangle(20, 10, index, 20);
+		run("Fill", "slice");
+	}
+}
+
+macro "remapColorStack"{
+	// Get the main Directory
+	workDir = getDirectory("Select Movie folder");
+	workFile = getFileList(workDir);
+	nFile = workFile.length;
+
+	setBatchMode(true);
+	// Loop through all the file: neuritemask
+	for (n = 0; n < nFile; n++){
+		showProgress(n / nFile);
+		open(workDir + workFile[n]);
+		title = getTitle();
+		sTitle = substring(title, 0, lengthOf(title) - 4);
+		run("Split Channels");
+		run("Merge Channels...", "c1=C3-"+ title +" c2=C1-"+ title +" c3=C2-"+ title +" create ignore");
+		saveAs("Tiff",  workDir + "\\" + sTitle + ".tif");
+		while(nImages<0) close();
+	}
+	setBatchMode(false);
+}
+
+macro "calculateIntesitySynD" {
+	bCont = true;
+	while(bCont){
+		waitForUser("Load Image and MaskSet");
+		newImage("Aa", "16-bit black", 1434, 1434, 1);
+		roiManager("Select", 2);
+		roiManager("Select", 0);
+		setForegroundColor(255, 0, 255);
+		run("Fill", "slice");
+		roiManager("Select", 1);
+		run("Fill", "slice");
+		roiManager("Select", 2);
+		run("Fill", "slice");
+		setOption("BlackBackground", true);
+		run("Make Binary");
+		run("Create Selection");
+		run("Make Inverse");
+		roiManager("Add");
+		roiManager("Select", 4);
+		roiManager("Rename", "Background");
+		close();
+		roiManager("Deselect");
+		roiManager("Multi Measure");
+		bCont = getBoolean("Continue?");
+	}
+}
+
+macro "subtractBG"{
+	setBatchMode("hide");
+	tempM = newArray(3);
+	for(s=1;s<=nSlices;s++){
+		for(r=0;r<3;r++){
+			roiManager("Select", r);
+			setSlice(s);
+			getStatistics(a, tempM[r], min, mx, std, hist);
+		}
+		Array.getStatistics(tempM, min, max, mean, stdDev);
+		run("Select None");
+		run("Subtract...", "value=" + mean + " slice");
+	}
+	setBatchMode("exit and display");
+}
+
+macro "synapticFusion"{
+	bCont = true;
+	while(bCont){
+		waitForUser("Load");
+		run("Morphological Filters", "operation=[White Top Hat] element=Disk radius=2");
+		setAutoThreshold("Otsu dark");
+		setOption("BlackBackground", true);
+		run("Convert to Mask");
+		roiManager("Multi Measure");
+		String.copyResults();
+		bCont = getBoolean("Continue?");
+		roiManager("Delete");
+		while(nImages>0){
+			close();
+		}
+	}
+}
