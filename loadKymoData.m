@@ -57,6 +57,8 @@ for s = 1:nSheets
     waitProg = s/nSheets;
     waitbar(waitProg, hWait, sprintf('Loading %d/%d', s, nSheets));
     sheetName = xlDataSheets{s};
+    nameParts = regexpi(sheetName, '_', 'split');
+    conditionID = nameParts{2};
     
     % get the IDs
     [~, ~, kymoData] = xlsread(fullKymoPath, sheetName);
@@ -92,12 +94,14 @@ for s = 1:nSheets
         if s == 1 && v == 1
             CellID{1} = sheetName;
             VesID{1} = sprintf('%03d', v);
+            Condition{1} = conditionID;
             Position{1} = posQX';
             Velocity{1} = velQX';
             axLength(1) = cell2mat(kymoData(1,8));
         else
             CellID{end+1, 1} = sheetName;
             VesID{end+1, 1} = sprintf('%03d', v);
+            Condition{end+1, 1} = conditionID;
             Position{end+1, 1} = posQX';
             Velocity{end+1, 1} = velQX';
             if v < nVes 
@@ -109,5 +113,6 @@ for s = 1:nSheets
     end
 end
 
-kymoTable = table(CellID, VesID, Position, Velocity, axLength);
+kymoTable = table(CellID, VesID, Condition, Position, Velocity, axLength);
+kymoTable.Condition = categorical(kymoTable.Condition);
 close(hWait);
