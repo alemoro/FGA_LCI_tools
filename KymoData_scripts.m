@@ -178,7 +178,7 @@ kymoT.netDirection = netDirection;
 % clean useless things
 clear options p t lastPoint trackCenter nTrack relDirection netDirection tempTrack reversePoints reverseTrack startIdx endIdx mins maxDeviation
 
-%% Net velocities
+%% Net velocities and speed
 stims = inputdlg({'Start of stimulation (s): '; 'End of stimulation(s): '},...
     'Set minimum', 1, {'30'; '54'});
 if isempty(who('minSpeed'))
@@ -192,9 +192,9 @@ if ~isempty(stims)
     endStim = str2double(cell2mat(stims(2)));
     nTrack = size(kymoT,1);
     netVelocity = NaN(nTrack,3);
-    averageSpeed = zeros(nTrack,3);
-    maxVel = zeros(nTrack,3);
-    minVel = zeros(nTrack,3);
+    averageSpeed = NaN(nTrack,3);
+    maxVel = NaN(nTrack,3);
+    minVel = NaN(nTrack,3);
     for t=1:nTrack
         tempTrack = cell2mat(kymoT{t,'Position'});
         tempSpeed = cell2mat(kymoT{t,'Velocity'});
@@ -505,8 +505,8 @@ clear tempVel tempBase tempChange
 % ab = varfun(@(x) sem(cell2mat(x)), kymoT(uniFltr,:), 'InputVariables', 'SpeedChange', 'GroupingVariable', {'Condition'});
 % ab.Properties.VariableNames{3} = 'sem_SpeedChange';
 % condT = [aa, ab(:,3)];
-
-clear ab aa
+% 
+% clear ab aa
 %% Plot function
 preVals = who;
 
@@ -520,7 +520,7 @@ switch useDir
     case 'Both'
         uniFltr = kymoT.netDirection == 'Ant' | kymoT.netDirection == 'Ret';
 end
-
+useKer = questdlg('What normalization to plot?', 'Histogram/KSdensity', 'Histogram', 'KSdensity', 'Both', 'Both');
 % get the minumin speed
 if isempty(who('minSpeed'))
     options.Interpreter='tex';
@@ -580,32 +580,31 @@ else
     hold on
 end
 w = 1;
+if ~isempty(strfind(varX{:}, 'Speed')) || ~isempty(strfind(varX{:}, 'Velocity'))
+    edges = 0:minSpeed:max(max(varToPlot));
+    bw = minSpeed;
+elseif ~isempty(strfind(varX{:}, 'Length'))
+    edges = 0:0.4:max(max(varToPlot));
+    bw = 0.4;
+elseif ~isempty(strfind(varX{:}, 'Time')) || ~isempty(strfind(varX{:}, 'time'))
+    edges = 0:1:max(max(varToPlot));
+    bw = 1;
+end
 for c = 1:nCond
     condFltr = myCond(:,1) == uniqCond(c);
     condCell = unique(uniT.CellID(condFltr));
     nCell = numel(condCell);
-    f = nan(nCell,100);
+    f = nan(nCell,numel(edges));
+    N = nan(nCell,numel(edges)-1);
     for g = 1:secSize
         for cell=1:nCell
             tempCell = condCell(cell);
             cellFltr = strcmp(uniT.CellID, tempCell);
             tempData = varToPlot(condFltr & cellFltr,g);
-            [f(cell,:), xi] = ksdensity(tempData,'bandwidth',0.05);
+            [f(cell,:), xi] = ksdensity(tempData,edges,'bandwidth',bw);
+            N(cell,:) = histcounts(tempData, edges, 'Normalization', 'probability');
         end
-        set(hF, 'currentaxes', hs(g));
-        meanF = nanmean(f,1);
-        semF = nanstd(f,[],1) ./ sqrt(nCell);
-        fillX = [xi fliplr(xi)];
-        fillY = [meanF+semF fliplr(meanF-semF)];
-        fill(fillX,fillY, cmap(c,:), 'facealpha', .3, 'EdgeColor', 'none');
-        hLeg(c) = plot(hs(g),xi,meanF,'color',cmap(c,:));
-        tempData = varToPlot(condFltr,g);
-        tempM = nanmean(tempData);
-        tempS = sem(tempData);
-        %         plot(h1,w,tempData,'o','color',cmap(c,:))
-        plot(h1,w+0.1,tempM,'o','MarkerEdgeColor', cmap(c,:), 'MarkerFaceColor', 'none', 'MarkerSize',4)
-        plot(h1,[w+0.1 w+0.1],[tempM-tempS tempM+tempS],'Color', cmap(c,:))
-        w = w+1;
+        axes(hs(g));
         if secSize > 1
             title(hs(g),sprintf('%s %s', varX{:}, scGrp{1,g}))
         else
@@ -619,6 +618,40 @@ for c = 1:nCond
             ylabel(hs(g),'EDF');
             xlabel(hs(g),varX{:});
         end
+        switch useKer
+            case 'Histogram'
+                meanN = nanmean(N,1);
+                semN = nanstd(N,[],1) ./ sqrt(nCell);
+                semX = [edges(1:end-1);edges(2:end);edges(2:end);edges(1:end-1)];
+                semY = [meanN-semN;meanN-semN;meanN+semN;meanN+semN];
+                patch(semX, semY, cmap(c,:), 'EdgeColor', 'none', 'faceAlpha',.3)
+                hLeg(c) = stairs(hs(g),edges(1:end-1),meanN,'color',cmap(c,:));
+            case 'KSdensity'
+                meanF = nanmean(f,1);
+                semF = nanstd(f,[],1) ./ sqrt(nCell);
+                fillX = [xi fliplr(xi)];
+                fillY = [meanF+semF fliplr(meanF-semF)];
+                fill(fillX,fillY, cmap(c,:), 'facealpha', .3, 'EdgeColor', 'none');
+                hLeg(c) = plot(hs(g),xi,meanF,'color',cmap(c,:));
+            case 'Both'
+                meanN = nanmean(N,1);
+                semN = nanstd(N,[],1) ./ sqrt(nCell);
+                semX = [edges(1:end-1);edges(2:end);edges(2:end);edges(1:end-1)];
+                semY = [meanN-semN;meanN-semN;meanN+semN;meanN+semN];
+                patch(semX, semY, cmap(c,:), 'EdgeColor', 'none', 'faceAlpha',.3)
+                hLeg(c) = stairs(hs(g),edges(1:end-1),meanN,'color',cmap(c,:));
+                tempData = varToPlot(condFltr,g);
+                f = ksdensity(tempData,edges,'bandwidth',bw);
+                f = f * 0.3/max(f);
+                axes(h1);
+                fill([w+f, fliplr(w-f)], [edges, fliplr(edges)], cmap(c,:), 'facealpha', .3, 'EdgeColor', 'none')
+        end
+        tempData = varToPlot(condFltr,g);
+        tempM = nanmean(tempData);
+        tempS = sem(tempData);
+        plot(h1,w+0.1,tempM,'o','MarkerEdgeColor', cmap(c,:), 'MarkerFaceColor', 'none', 'MarkerSize',4)
+        plot(h1,[w+0.1 w+0.1],[tempM-tempS tempM+tempS],'Color', cmap(c,:))
+        w = w+1;
     end
 end
 legend(hs(g),hLeg, char(uniqCond))
